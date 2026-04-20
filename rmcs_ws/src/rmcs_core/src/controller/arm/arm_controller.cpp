@@ -1,5 +1,6 @@
 #include "controller/arm/Kinematic.hpp"
 #include "controller/arm/trajectory.hpp"
+#include "filter/low_pass_filter.hpp"
 #include "hardware/endian_promise.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
@@ -95,15 +96,21 @@ public:
             ++startup_disable_count_;
             *is_arm_enable = false;
             for (std::size_t i = 0; i < std::size(theta); ++i) {
-                *target_theta[i] = *theta[i];
+                const double current_theta = *theta[i];
+                sub_theta_filters_[i].update(current_theta);
+                *target_theta[i] = current_theta;
             }
             return;
         }
         *is_arm_enable = true;
         const bool sub_armboard_connected = !*sub_armboard_missing_;
         const bool sub_board_can_received = *sub_board_can_received_;
-        if (!sub_armboard_connected || !sub_board_can_received)
+        if (!sub_armboard_connected || !sub_board_can_received) {
+            for (std::size_t i = 0; i < std::size(theta); ++i) {
+                sub_theta_filters_[i].update(*theta[i]);
+            }
             return;
+        }
 
         for (std::size_t i = 0; i < std::size(sub_theta); ++i) {
             *target_theta[i] = *sub_theta[i];
@@ -112,6 +119,8 @@ public:
 
 private:
     static constexpr std::size_t kStartupDisableCycles = 100;
+    static constexpr double kControlLoopFrequencyHz    = 1000.0;
+    static constexpr double kSubThetaFilterCutoffHz    = 10.0;
 
     // rmcs_msgs::ArmMode last_requested_arm_mode_{rmcs_msgs::ArmMode::None};
 
@@ -242,6 +251,14 @@ private:
     InputInterface<bool> sub_board_can_received_;
     InputInterface<bool> sub_armboard_missing_;
     OutputInterface<double> target_theta[6];
+    std::array<rmcs_core::filter::LowPassFilter<>, 6> sub_theta_filters_{
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+        rmcs_core::filter::LowPassFilter<>(kSubThetaFilterCutoffHz, kControlLoopFrequencyHz),
+    };
     std::size_t startup_disable_count_{0};
 
     rclcpp::Node::SharedPtr node_;

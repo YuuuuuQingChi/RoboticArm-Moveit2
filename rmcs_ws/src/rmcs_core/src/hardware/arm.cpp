@@ -111,11 +111,8 @@ private:
             joint[1].configure(
                 LKMotorConfig{LKMotorType::MF7015V210T}.reverse().set_gear_ratio(42.0));
             joint[0].configure(
-                device::LKMotorConfig{device::LKMotorType::MG5010E_i36V3}
-                    .reverse()
-                    .set_encoder_zero_point(
-                        static_cast<int16_t>(
-                            arm.get_parameter("main_joint1_zero_point").as_int())));
+                device::LKMotorConfig{device::LKMotorType::MG5010E_i36V3}.set_encoder_zero_point(
+                    static_cast<int16_t>(arm.get_parameter("main_joint1_zero_point").as_int())));
             joint2_encoder.configure(
                 EncoderConfig{EncoderType::KTH7823}.set_encoder_zero_point(
                     static_cast<int>(arm.get_parameter("main_joint2_zero_point").as_int())));
@@ -140,14 +137,7 @@ private:
         void update() {
             using namespace device;
             update_arm_motors();
-            // static std::size_t log_counter{0};
-            // if ((++log_counter % 100) == 0) {
-            //     RCLCPP_INFO(
-            //         get_logger(), "main joint raw angle: j1=%d j2=%d j3=%d j4=%d j5=%f j6=%d",
-            //         joint[0].get_raw_angle(), joint2_encoder.get_raw_angle(),
-            //         joint[2].get_raw_angle(), joint[4].get_raw_angle(), joint[4].get_angle(),
-            //         joint[5].get_raw_angle());
-            // }
+            
         }
         void command() { update_arm_command(); }
 
@@ -287,6 +277,23 @@ private:
             }
         }
         ~SubArmBoard() final {
+            const uint64_t dm_close_command   = device::DMMotor::dm_close_command();
+            const auto lk_zero_torque_command = std::bit_cast<uint64_t>(
+                std::array<uint8_t, 8>{0xA1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+
+            for (int i = 0; i < 10; ++i) {
+                transmit_buffer_.add_can1_transmission(0x055, dm_close_command);
+                transmit_buffer_.add_can1_transmission(0x034, dm_close_command);
+                transmit_buffer_.add_can1_transmission(0x003, dm_close_command);
+
+                transmit_buffer_.add_can2_transmission(0x143, lk_zero_torque_command);
+                transmit_buffer_.add_can2_transmission(0x144, lk_zero_torque_command);
+                transmit_buffer_.add_can2_transmission(0x145, lk_zero_torque_command);
+
+                transmit_buffer_.trigger_transmission();
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+
             stop_handling_events();
             event_thread_.join();
         }
@@ -299,14 +306,6 @@ private:
                 *can_received_          = true;
                 can_received_published_ = true;
             }
-            // static std::size_t log_counter{0};
-            // if ((++log_counter % 100) == 0) {
-            //     RCLCPP_INFO(
-            //         this->get_logger(),
-            //         "sub joint angle(rad): j1=%.4f j2=%.4f j3=%.4f j4=%.4f j5=%.4f j6=%.4f",
-            //         joint_1.get_angle(), joint_2.get_angle(), joint_3.get_angle(),
-            //         joint_4.get_angle(), joint_5.get_angle(), joint_6.get_angle());
-            // }
         }
         void command() { arm_command_update(); }
 
@@ -315,13 +314,6 @@ private:
             uint64_t command_;
             static bool even_phase{true};
             const bool should_enable_dm_joint123 = arm_command_.should_enable_dm_joint123();
-            // RCLCPP_INFO(
-            //     this->get_logger(), "joint5 control torque: %f %f %f %f %d %d %d %d",
-            //     big_yaw.get_angle(), joint_1.get_angle(), joint_2.get_angle(),
-            //     joint_3.get_angle(), joint_4.get_raw_angle(), joint_5.get_raw_angle(),
-            //     joint_6.get_raw_angle(), gripper.get_raw_angle());
-            // RCLCPP_INFO(get_logger(),"%d %d
-            // %d",joint_4.get_raw_angle(),joint_5.get_raw_angle(),joint_6.get_raw_angle());
             if (should_enable_dm_joint123) {
                 command_ = device::DMMotor::dm_enable_command();
                 transmit_buffer_.add_can1_transmission(0x055, command_);

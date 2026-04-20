@@ -114,7 +114,9 @@ private:
             const double target_theta  = clamp_target_theta(idx, *joint_target_theta(idx));
             const double current_vel   = *joint_velocity(idx);
 
-            const double angle_error = normalize_angle(target_theta - current_theta);
+            const double raw_angle_error = target_theta - current_theta;
+            const double angle_error =
+                (idx == 0) ? raw_angle_error : normalize_angle(raw_angle_error);
             const double target_vel  = joint_angle_pid_controller(idx).update(angle_error);
             const double vel_error   = target_vel - current_vel;
 

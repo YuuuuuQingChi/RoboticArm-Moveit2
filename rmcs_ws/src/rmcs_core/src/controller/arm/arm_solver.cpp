@@ -33,7 +33,7 @@ public:
           }
         , joint_vel_pid_controller{
              pid::PidCalculator(0.4, 0.0, 0.0), // joint_1
-              pid::PidCalculator(1.3, 0.0, 0.00), // joint_2
+              pid::PidCalculator(0.9, 0.0, 0.00), // joint_2
               pid::PidCalculator(0.6, 0.0, 0.004), // joint_3
               pid::PidCalculator(0.65, 0.0, 0.002), // joint_4
               pid::PidCalculator(0.121, 0.0, 0.004), // joint_5
@@ -116,7 +116,9 @@ private:
             const double target_theta  = clamp_target_theta(idx, *joint_target_theta(idx));
             const double current_vel   = *joint_velocity(idx);
 
-            const double angle_error = normalize_angle(target_theta - current_theta);
+            const double raw_angle_error = target_theta - current_theta;
+            const double angle_error =
+                (idx == 0) ? raw_angle_error : normalize_angle(raw_angle_error);
             const double target_vel  = joint_angle_pid_controller(idx).update(angle_error);
             const double vel_error   = target_vel - current_vel;
 
